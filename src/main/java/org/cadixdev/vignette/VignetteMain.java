@@ -8,6 +8,9 @@ package org.cadixdev.vignette;
 
 import static java.util.Arrays.asList;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.jimfs.Configuration;
+import com.google.common.jimfs.Jimfs;
 import joptsimple.OptionException;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
@@ -17,6 +20,7 @@ import net.minecraftforge.lex.EnhancedRemappingTransformer;
 import net.minecraftforge.lex.ParameterAnnotationFixer;
 
 import org.cadixdev.atlas.Atlas;
+import org.cadixdev.atlas.util.NIOHelper;
 import org.cadixdev.lorenz.MappingSet;
 import org.cadixdev.lorenz.io.MappingFormat;
 import org.cadixdev.lorenz.io.MappingFormats;
@@ -24,12 +28,18 @@ import org.cadixdev.vignette.util.MappingFormatValueConverter;
 import org.cadixdev.vignette.util.PathValueConverter;
 
 import java.io.IOException;
+import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 /**
  * The Main-Class behind Vignette.
@@ -71,6 +81,7 @@ public final class VignetteMain {
         final OptionSpec<Void> ffmetaSpec = parser.acceptsAll(asList("fernflower-meta", "f"), "Generate special metadata file for ForgeFlower that will name abstract method arguments during decompilation");
         final OptionSpec<Void> ctrSpec = parser.acceptsAll(asList("create-inits", "c"), "Automatically inject synthetic <init> functions for classes with final fields and no constructors.");
         final OptionSpec<Void> parAnnSpec = parser.acceptsAll(asList("fix-param-annotations", "p"), "Attempts to fix parameter annotations that get shifted due to the compiler injecting synthetics");
+        final OptionSpec<Void> stableSpec = parser.accepts("stable", "Generate stable jars that attempt to change less for the same given inputs");
 
         final OptionSet options;
         try {
@@ -148,7 +159,21 @@ public final class VignetteMain {
                     System.out.println("Parameter Annotations");
                 }
 
-                atlas.run(jarInPath, jarOutPath);
+                try (FileSystem memFs = Jimfs.newFileSystem(Configuration.unix())) {
+                    Path memoryOutput = memFs.getPath("output.jar");
+
+                    try {
+                        atlas.run(jarInPath, memoryOutput);
+                    } catch (UnsupportedOperationException e) {
+                        // dumb software
+                    }
+
+                    if (options.has(stableSpec)) {
+                        memoryOutput = makeStableJar(memFs, memoryOutput);
+                    }
+
+                    Files.copy(memoryOutput, jarOutPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+                }
 
                 System.out.println("Processing Complete");
             }
@@ -166,6 +191,37 @@ public final class VignetteMain {
             }
             System.exit(-1);
         }
+    }
+
+    private static Path makeStableJar(FileSystem memFs, Path input) throws IOException {
+        Path output = memFs.getPath("stable.jar");
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(output))) {
+            try (FileSystem zipFs = NIOHelper.openZip(input, false)) {
+                List<Path> paths = Files.walk(zipFs.getPath("/")).collect(Collectors.toList());
+                List<String> special = ImmutableList.of("/META-INF", "/META-INF/MANIFEST.MF");
+                paths.sort(Comparator.comparing(Path::toString, (left, right) -> {
+                    boolean containsLeft = special.contains(left);
+                    boolean containsRight = special.contains(right);
+                    if (containsLeft && containsRight) {
+                        return Integer.compare(special.indexOf(left), special.indexOf(right));
+                    }
+                    if (containsLeft)
+                        return 1;
+                    if (containsRight)
+                        return -1;
+                    return left.compareTo(right);
+                }));
+                for (Path path : paths) {
+                    ZipEntry zipEntry = new ZipEntry(path.toString().substring(1));
+                    zipEntry.setTime(628041600000L); //Java8 screws up on 0 time, so use another static time.
+                    zos.putNextEntry(zipEntry);
+                    if (Files.isRegularFile(path))
+                        zos.write(Files.readAllBytes(path));
+                    zos.closeEntry();
+                }
+            }
+        }
+        return output;
     }
 
     private static String[] enhanceArgs(String[] args) {
