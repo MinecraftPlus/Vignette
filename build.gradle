@@ -3,37 +3,37 @@ buildscript {
         maven {
             url 'https://plugins.gradle.org/m2/'
         }
+        maven { url = 'https://maven.minecraftforge.net' }
     }
     dependencies {
         classpath 'com.github.jengelman.gradle.plugins:shadow:4.0.3'
+        classpath 'net.minecraftforge:GradleUtils:1.+'
     }
-}
-
-plugins {
-    id 'org.ajoberstar.grgit' version '4.1.0'
 }
 
 apply plugin: 'java'
 apply plugin: 'maven'
 apply plugin: 'com.github.johnrengelman.shadow'
+apply plugin: 'net.minecraftforge.gradleutils'
 
 sourceCompatibility = javaVersion
 targetCompatibility = javaVersion
 
 group = 'net.minecraftforge.lex' // Repackaged from 'org.cadixdev' to publish on Forge's Maven with out transformers
 archivesBaseName = project.name.toLowerCase()
-version = (grgit.describe(longDescr: true, tags: true) ?: 'unknown-unknown-unknown').split('-').with { "${it[0]}.${it[1]}" }
+version = gradleutils.getTagOffsetVersion()
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    compile "org.cadixdev:atlas:$atlasVersion"
-    compile "org.cadixdev:lorenz:$lorenzVersion"
-    compile "org.cadixdev:lorenz-asm:$lorenzVersion"
-    compile 'net.sf.jopt-simple:jopt-simple:5.0.4'
-    compile 'org.ow2.asm:asm-commons:9.1'
+    implementation "org.cadixdev:atlas:$atlasVersion"
+    implementation "org.cadixdev:lorenz:$lorenzVersion"
+    implementation "org.cadixdev:lorenz-asm:$lorenzVersion"
+    implementation 'net.sf.jopt-simple:jopt-simple:5.0.4'
+    implementation 'org.ow2.asm:asm-commons:9.1'
+    implementation 'com.google.jimfs:jimfs:1.2'
 }
 
 processResources {
