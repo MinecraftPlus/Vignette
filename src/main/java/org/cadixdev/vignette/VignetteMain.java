@@ -159,20 +159,20 @@ public final class VignetteMain {
                     System.out.println("Parameter Annotations");
                 }
 
-                try (FileSystem memFs = Jimfs.newFileSystem(Configuration.unix())) {
-                    Path memoryOutput = memFs.getPath("output.jar");
+                if (options.has(stableSpec)) {
+                    try (FileSystem memFs = Jimfs.newFileSystem(Configuration.unix())) {
+                        Path memoryOutput = memFs.getPath("output.jar");
 
-                    try {
-                        atlas.run(jarInPath, memoryOutput);
-                    } catch (UnsupportedOperationException e) {
-                        // dumb software
+                        try {
+                            atlas.run(jarInPath, memoryOutput);
+                        } catch (UnsupportedOperationException e) {
+                            // TODO upstream a fix to Atlas
+                        }
+
+                        Files.copy(makeStableJar(memFs, memoryOutput), jarOutPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
                     }
-
-                    if (options.has(stableSpec)) {
-                        memoryOutput = makeStableJar(memFs, memoryOutput);
-                    }
-
-                    Files.copy(memoryOutput, jarOutPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+                } else {
+                    atlas.run(jarInPath, jarOutPath);
                 }
 
                 System.out.println("Processing Complete");
