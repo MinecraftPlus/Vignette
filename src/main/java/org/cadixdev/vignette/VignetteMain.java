@@ -214,7 +214,11 @@ public final class VignetteMain {
             }));
             paths.remove(rootInput);
             for (Path path : paths) {
-                ZipEntry zipEntry = new ZipEntry(path.toString().substring(1));
+                String pathString = path.toString().substring(1).replace('\\', '/');
+                boolean directory = Files.isDirectory(path);
+                if (directory && !pathString.endsWith("/"))
+                    pathString += "/";
+                ZipEntry zipEntry = new ZipEntry(pathString);
                 zipEntry.setTime(628041600000L); //Java8 screws up on 0 time, so use another static time.
                 zos.putNextEntry(zipEntry);
                 if (Files.isRegularFile(path))
