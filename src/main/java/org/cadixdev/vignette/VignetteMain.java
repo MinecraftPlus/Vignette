@@ -195,30 +195,35 @@ public final class VignetteMain {
 
     private static Path makeStableJar(FileSystem memFs, Path input) throws IOException {
         Path output = memFs.getPath("stable.jar");
-        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(output))) {
-            try (FileSystem zipFs = NIOHelper.openZip(input, false)) {
-                List<Path> paths = Files.walk(zipFs.getPath("/")).collect(Collectors.toList());
-                List<String> special = ImmutableList.of("/META-INF", "/META-INF/MANIFEST.MF");
-                paths.sort(Comparator.comparing(Path::toString, (left, right) -> {
-                    boolean containsLeft = special.contains(left);
-                    boolean containsRight = special.contains(right);
-                    if (containsLeft && containsRight) {
-                        return Integer.compare(special.indexOf(left), special.indexOf(right));
-                    }
-                    if (containsLeft)
-                        return 1;
-                    if (containsRight)
-                        return -1;
-                    return left.compareTo(right);
-                }));
-                for (Path path : paths) {
-                    ZipEntry zipEntry = new ZipEntry(path.toString().substring(1));
-                    zipEntry.setTime(628041600000L); //Java8 screws up on 0 time, so use another static time.
-                    zos.putNextEntry(zipEntry);
-                    if (Files.isRegularFile(path))
-                        zos.write(Files.readAllBytes(path));
-                    zos.closeEntry();
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(output));
+            FileSystem zipFs = NIOHelper.openZip(input, false)) {
+            Path rootInput = zipFs.getPath("/");
+            List<Path> paths = Files.walk(rootInput).collect(Collectors.toList());
+            List<String> special = ImmutableList.of("/META-INF", "/META-INF/MANIFEST.MF");
+            paths.sort(Comparator.comparing(Path::toString, (left, right) -> {
+                boolean containsLeft = special.contains(left);
+                boolean containsRight = special.contains(right);
+                if (containsLeft && containsRight) {
+                    return Integer.compare(special.indexOf(left), special.indexOf(right));
                 }
+                if (containsLeft)
+                    return 1;
+                if (containsRight)
+                    return -1;
+                return left.compareTo(right);
+            }));
+            paths.remove(rootInput);
+            for (Path path : paths) {
+                String pathString = path.toString().substring(1).replace('\\', '/');
+                boolean directory = Files.isDirectory(path);
+                if (directory && !pathString.endsWith("/"))
+                    pathString += "/";
+                ZipEntry zipEntry = new ZipEntry(pathString);
+                zipEntry.setTime(628041600000L); //Java8 screws up on 0 time, so use another static time.
+                zos.putNextEntry(zipEntry);
+                if (Files.isRegularFile(path))
+                    Files.copy(path, zos);
+                zos.closeEntry();
             }
         }
         return output;
