@@ -8,22 +8,39 @@ package org.cadixdev.vignette;
 
 import static java.util.Arrays.asList;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.jimfs.Configuration;
+import com.google.common.jimfs.Jimfs;
 import joptsimple.OptionException;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 import joptsimple.OptionSpec;
+import net.minecraftforge.lex.ConstructorInjector;
+import net.minecraftforge.lex.EnhancedRemappingTransformer;
+import net.minecraftforge.lex.ParameterAnnotationFixer;
+
 import org.cadixdev.atlas.Atlas;
-import org.cadixdev.bombe.asm.jar.JarEntryRemappingTransformer;
+import org.cadixdev.atlas.util.NIOHelper;
 import org.cadixdev.lorenz.MappingSet;
-import org.cadixdev.lorenz.asm.LorenzRemapper;
 import org.cadixdev.lorenz.io.MappingFormat;
 import org.cadixdev.lorenz.io.MappingFormats;
 import org.cadixdev.vignette.util.MappingFormatValueConverter;
 import org.cadixdev.vignette.util.PathValueConverter;
+import org.minecraftplus.EnhancedDeducingRemappingTransformer;
+import org.minecraftplus.srgprocessor.Dictionary;
 
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 /**
  * The Main-Class behind Vignette.
@@ -34,6 +51,7 @@ import java.nio.file.Path;
 public final class VignetteMain {
 
     public static void main(final String[] args) {
+
         final OptionParser parser = new OptionParser();
 
         // Modes
@@ -55,9 +73,24 @@ public final class VignetteMain {
                 .withRequiredArg()
                 .withValuesConvertedBy(PathValueConverter.INSTANCE);
 
+        // Optional Options
+        final OptionSpec<Integer> threadsSpec = parser.acceptsAll(asList("threads", "t"), "Number of threads to use when remapping")
+                .withRequiredArg().ofType(Integer.class);
+        final OptionSpec<Path> librarySpec = parser.acceptsAll(asList("library", "l", "e"), "Library to add to the classpath for constructing inheritence")
+                .withRequiredArg()
+                .withValuesConvertedBy(PathValueConverter.INSTANCE);
+        final OptionSpec<Void> ffmetaSpec = parser.acceptsAll(asList("fernflower-meta", "f"), "Generate special metadata file for ForgeFlower that will name abstract method arguments during decompilation");
+        final OptionSpec<Void> ctrSpec = parser.acceptsAll(asList("create-inits", "c"), "Automatically inject synthetic <init> functions for classes with final fields and no constructors.");
+        final OptionSpec<Void> parAnnSpec = parser.acceptsAll(asList("fix-param-annotations", "p"), "Attempts to fix parameter annotations that get shifted due to the compiler injecting synthetics");
+        final OptionSpec<Void> parDeduceSpec = parser.acceptsAll(asList("deduce-param-names", "dp"), "Deduce parameter names from parameter signature");
+        final OptionSpec<Path> dictionarySpec = parser.acceptsAll(asList("dictionary", "d"), "Dictionary to be used in parameter names deducing")
+                .withRequiredArg()
+                .withValuesConvertedBy(PathValueConverter.INSTANCE);
+        final OptionSpec<Void> stableSpec = parser.accepts("stable", "Generate stable jars that attempt to change less for the same given inputs");
+
         final OptionSet options;
         try {
-            options = parser.parse(args);
+            options = parser.parse(enhanceArgs(args));
         }
         catch (final OptionException ex) {
             System.err.println("Failed to parse OptionSet! Exiting...");
@@ -89,6 +122,8 @@ public final class VignetteMain {
         else if (options.has(mappingsSpec) && options.has(jarInSpec) && options.has(jarOutSpec)) {
             final Path jarInPath = options.valueOf(jarInSpec);
             final Path jarOutPath = options.valueOf(jarOutSpec);
+            System.out.println("Input: " + jarInPath);
+            System.out.println("Output: " + jarOutPath);
             if (Files.notExists(jarInPath)) {
                 throw new RuntimeException("Input jar does not exist!");
             }
@@ -101,19 +136,66 @@ public final class VignetteMain {
 
             final MappingSet mappings;
             try {
-                 mappings = mappingFormat.read(mappingsPath);
+                System.out.println("Format: " + mappingFormat);
+                System.out.println("Mappings: " + mappingsPath);
+                mappings = mappingFormat.read(mappingsPath);
             }
             catch (final IOException ex) {
                 throw new RuntimeException("Failed to read input mappings!", ex);
             }
 
-            final Atlas atlas = new Atlas();
-            atlas.install(ctx -> new JarEntryRemappingTransformer(new LorenzRemapper(
-                    mappings,
-                    ctx.inheritanceProvider()
-            )));
-            try {
-                atlas.run(jarInPath, jarOutPath);
+            try (Atlas atlas = options.has(threadsSpec) ? new Atlas(options.valueOf(threadsSpec)) : new Atlas()) {
+                for (Path lib : options.valuesOf(librarySpec)) {
+                    try {
+                        System.out.println("Library: " + lib);
+                        atlas.use(lib);
+                    } catch (IOException ex) {
+                        throw new RuntimeException("Failed to read library!", ex);
+                    }
+                }
+
+                if (options.has(parDeduceSpec)) {
+                    Set<Dictionary> dictionaries = new HashSet<>();
+                    for (Path dict : options.valuesOf(dictionarySpec)) {
+                        try {
+                            System.out.println("Dictionary: " + dict);
+                            dictionaries.add(new Dictionary().load(new FileInputStream(dict.toFile())));
+                        } catch (IOException ex) {
+                            throw new RuntimeException("Failed to read dictionary!", ex);
+                        }
+                    }
+                    atlas.install(ctx -> new EnhancedDeducingRemappingTransformer(mappings, dictionaries, ctx, options.has(ffmetaSpec)));
+                    System.out.println("Deducing");
+                } else {
+                    atlas.install(ctx -> new EnhancedRemappingTransformer(mappings, ctx, options.has(ffmetaSpec)));
+                }
+
+                if (options.has(ctrSpec)) {
+                    atlas.install(ctx -> new ConstructorInjector(ctx, mappings));
+                    System.out.println("Constructors");
+                }
+                if (options.has(parAnnSpec)) {
+                    atlas.install(ctx -> new ParameterAnnotationFixer());
+                    System.out.println("Parameter Annotations");
+                }
+
+                if (options.has(stableSpec)) {
+                    try (FileSystem memFs = Jimfs.newFileSystem(Configuration.unix())) {
+                        Path memoryOutput = memFs.getPath("output.jar");
+
+                        try {
+                            atlas.run(jarInPath, memoryOutput);
+                        } catch (UnsupportedOperationException e) {
+                            // TODO upstream a fix to Atlas
+                        }
+
+                        Files.copy(makeStableJar(memFs, memoryOutput), jarOutPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+                    }
+                } else {
+                    atlas.run(jarInPath, jarOutPath);
+                }
+
+                System.out.println("Processing Complete");
             }
             catch (final IOException ex) {
                 throw new RuntimeException("Failed to remap artifact!", ex);
@@ -129,6 +211,69 @@ public final class VignetteMain {
             }
             System.exit(-1);
         }
+    }
+
+    private static Path makeStableJar(FileSystem memFs, Path input) throws IOException {
+        Path output = memFs.getPath("stable.jar");
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(output));
+            FileSystem zipFs = NIOHelper.openZip(input, false)) {
+            Path rootInput = zipFs.getPath("/");
+            List<Path> paths = Files.walk(rootInput).collect(Collectors.toList());
+            List<String> special = ImmutableList.of("/META-INF", "/META-INF/MANIFEST.MF");
+            paths.sort(Comparator.comparing(Path::toString, (left, right) -> {
+                boolean containsLeft = special.contains(left);
+                boolean containsRight = special.contains(right);
+                if (containsLeft && containsRight) {
+                    return Integer.compare(special.indexOf(left), special.indexOf(right));
+                }
+                if (containsLeft)
+                    return 1;
+                if (containsRight)
+                    return -1;
+                return left.compareTo(right);
+            }));
+            paths.remove(rootInput);
+            for (Path path : paths) {
+                String pathString = path.toString().substring(1).replace('\\', '/');
+                boolean directory = Files.isDirectory(path);
+                if (directory && !pathString.endsWith("/"))
+                    pathString += "/";
+                ZipEntry zipEntry = new ZipEntry(pathString);
+                zipEntry.setTime(628041600000L); //Java8 screws up on 0 time, so use another static time.
+                zos.putNextEntry(zipEntry);
+                if (Files.isRegularFile(path))
+                    Files.copy(path, zos);
+                zos.closeEntry();
+            }
+        }
+        return output;
+    }
+
+    private static String[] enhanceArgs(String[] args) {
+        List<String> params = new ArrayList<>();
+        for (int x = 0; x < args.length; x++) {
+            if (args[x].startsWith("--cfg")) {
+                String path = null;
+                if (args[x].startsWith("--cfg="))
+                    path = args[x].substring(5);
+                else if (args.length > x+1)
+                    path = args[++x];
+                else
+                    throw new IllegalArgumentException("Must specify a file when using --cfg argument.");
+                Path file = Paths.get(path);
+
+                if (!Files.exists(file))
+                    throw new IllegalArgumentException("error: missing config '" + path + "'");
+
+                try (Stream<String> stream = Files.lines(file)) {
+                    stream.forEach(params::add);
+                } catch (IOException e) {
+                    throw new RuntimeException("error: Failed to read config file '" + path + "'", e);
+                }
+            } else
+                params.add(args[x]);
+        }
+        return params.toArray(new String[params.size()]);
     }
 
     private VignetteMain() {

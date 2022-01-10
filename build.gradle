@@ -1,38 +1,36 @@
-buildscript {
-    repositories {
-        maven {
-            url 'https://plugins.gradle.org/m2/'
-        }
-    }
-    dependencies {
-        classpath 'com.github.jengelman.gradle.plugins:shadow:4.0.3'
-    }
+plugins {
+    id 'java'
+    id 'maven'
+    id 'com.github.johnrengelman.shadow' version '4.0.3'
+    id 'net.minecraftforge.gradleutils' version '1.+'
 }
-
-apply plugin: 'java'
-apply plugin: 'maven'
-apply plugin: 'com.github.johnrengelman.shadow'
 
 sourceCompatibility = javaVersion
 targetCompatibility = javaVersion
 
-group = 'org.cadixdev'
+group = 'org.minecraftplus' // Repackaged from 'org.cadixdev' to publish on Maven with out transformers
 archivesBaseName = project.name.toLowerCase()
-version = '0.1.0'
+version = gradleutils.getTagOffsetVersion()
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    compile "org.cadixdev:atlas:$atlasVersion"
-    compile "org.cadixdev:lorenz:$lorenzVersion"
-    compile "org.cadixdev:lorenz-asm:$lorenzVersion"
-    compile 'net.sf.jopt-simple:jopt-simple:5.0.4'
+    implementation "org.cadixdev:atlas:$atlasVersion"
+    implementation "org.cadixdev:lorenz:$lorenzVersion"
+    implementation "org.cadixdev:lorenz-asm:$lorenzVersion"
+    implementation 'net.sf.jopt-simple:jopt-simple:5.0.4'
+    implementation 'org.ow2.asm:asm-commons:9.1'
+    implementation 'com.google.jimfs:jimfs:1.2'
 }
 
 processResources {
     from 'LICENSE.txt'
+}
+
+shadowJar {
+  mergeServiceFiles()
 }
 
 jar {
@@ -84,6 +82,18 @@ uploadArchives {
                     authentication(userName: ossrhUsername, password: ossrhPassword)
                 }
             }
+            
+            // MinecraftPlus's maven
+            if (System.env.MAVEN_USER) {
+                repository(url: 'https://maven.minecraftplus.org/') {
+                    authentication(
+                        userName: System.env.MAVEN_USER ?: 'not',
+                        password: System.env.MAVEN_PASSWORD ?: 'set'
+                    )
+                }
+            } else {
+                repository(url: 'file://' + rootProject.file('repo').getAbsolutePath())
+            }
 
             pom {
                 artifactId = project.archivesBaseName
@@ -96,14 +106,14 @@ uploadArchives {
                     inceptionYear = project.inceptionYear
 
                     scm {
-                        url = 'https://github.com/CadixDev/Vignette'
-                        connection = 'scm:git:https://github.com/CadixDev/Vignette.git'
-                        developerConnection = 'scm:git:git@github.com:CadixDev/Vignette.git'
+                        url = 'https://github.com/MinecraftPlus/Vignette'
+                        connection = 'scm:git:https://github.com/MinecraftPlus/Vignette.git'
+                        developerConnection = 'scm:git:git@github.com:MinecraftPlus/Vignette.git'
                     }
 
                     issueManagement {
                         system = 'GitHub'
-                        url = 'https://github.com/CadixDev/Vignette/issues'
+                        url = 'https://github.com/MinecraftPlus/Vignette/issues'
                     }
 
                     licenses {
@@ -121,6 +131,11 @@ uploadArchives {
                             email = 'jmansfield@cadixdev.org'
                             url = 'https://www.jamiemansfield.me/'
                             timezone = 'Europe/London'
+                        }
+                        developer {
+                            id = 'thewituch'
+                            email = 'thewituch@gmail.com'
+                            timezone = 'Europe/Warsaw'
                         }
                     }
                 }

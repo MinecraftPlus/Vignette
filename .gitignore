@@ -148,3 +148,9 @@ gradle-app.setting
 **/build/
 
 # End of https://www.gitignore.io/api/java,linux,gradle,intellij+all
+/bin/
+/.settings/
+/META-INF/
+/.classpath
+/.project
+/repo/
