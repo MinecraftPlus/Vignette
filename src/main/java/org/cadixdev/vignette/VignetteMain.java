@@ -26,16 +26,17 @@ import org.cadixdev.lorenz.io.MappingFormat;
 import org.cadixdev.lorenz.io.MappingFormats;
 import org.cadixdev.vignette.util.MappingFormatValueConverter;
 import org.cadixdev.vignette.util.PathValueConverter;
+import org.minecraftplus.EnhancedDeducingRemappingTransformer;
+import org.minecraftplus.srgprocessor.Dictionary;
 
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -81,6 +82,10 @@ public final class VignetteMain {
         final OptionSpec<Void> ffmetaSpec = parser.acceptsAll(asList("fernflower-meta", "f"), "Generate special metadata file for ForgeFlower that will name abstract method arguments during decompilation");
         final OptionSpec<Void> ctrSpec = parser.acceptsAll(asList("create-inits", "c"), "Automatically inject synthetic <init> functions for classes with final fields and no constructors.");
         final OptionSpec<Void> parAnnSpec = parser.acceptsAll(asList("fix-param-annotations", "p"), "Attempts to fix parameter annotations that get shifted due to the compiler injecting synthetics");
+        final OptionSpec<Void> parDeduceSpec = parser.acceptsAll(asList("deduce-param-names", "dp"), "Deduce parameter names from parameter signature");
+        final OptionSpec<Path> dictionarySpec = parser.acceptsAll(asList("dictionary", "d"), "Dictionary to be used in parameter names deducing")
+                .withRequiredArg()
+                .withValuesConvertedBy(PathValueConverter.INSTANCE);
         final OptionSpec<Void> stableSpec = parser.accepts("stable", "Generate stable jars that attempt to change less for the same given inputs");
 
         final OptionSet options;
@@ -149,7 +154,22 @@ public final class VignetteMain {
                     }
                 }
 
-                atlas.install(ctx -> new EnhancedRemappingTransformer(mappings, ctx, options.has(ffmetaSpec)));
+                if (options.has(parDeduceSpec)) {
+                    Set<Dictionary> dictionaries = new HashSet<>();
+                    for (Path dict : options.valuesOf(dictionarySpec)) {
+                        try {
+                            System.out.println("Dictionary: " + dict);
+                            dictionaries.add(new Dictionary().load(new FileInputStream(dict.toFile())));
+                        } catch (IOException ex) {
+                            throw new RuntimeException("Failed to read dictionary!", ex);
+                        }
+                    }
+                    atlas.install(ctx -> new EnhancedDeducingRemappingTransformer(mappings, dictionaries, ctx, options.has(ffmetaSpec)));
+                    System.out.println("Deducing");
+                } else {
+                    atlas.install(ctx -> new EnhancedRemappingTransformer(mappings, ctx, options.has(ffmetaSpec)));
+                }
+
                 if (options.has(ctrSpec)) {
                     atlas.install(ctx -> new ConstructorInjector(ctx, mappings));
                     System.out.println("Constructors");
