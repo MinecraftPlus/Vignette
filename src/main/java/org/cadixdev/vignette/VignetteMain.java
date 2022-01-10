@@ -26,6 +26,7 @@ import org.cadixdev.lorenz.io.MappingFormat;
 import org.cadixdev.lorenz.io.MappingFormats;
 import org.cadixdev.vignette.util.MappingFormatValueConverter;
 import org.cadixdev.vignette.util.PathValueConverter;
+import org.minecraftplus.EnhancedDeducingRemappingTransformer;
 import org.minecraftplus.srgprocessor.Dictionary;
 
 import java.io.FileInputStream;
@@ -163,7 +164,7 @@ public final class VignetteMain {
                             throw new RuntimeException("Failed to read dictionary!", ex);
                         }
                     }
-                    atlas.install(ctx -> new EnhancedRemappingTransformer(mappings, ctx, options.has(ffmetaSpec)));
+                    atlas.install(ctx -> new EnhancedDeducingRemappingTransformer(mappings, dictionaries, ctx, options.has(ffmetaSpec)));
                     System.out.println("Deducing");
                 } else {
                     atlas.install(ctx -> new EnhancedRemappingTransformer(mappings, ctx, options.has(ffmetaSpec)));
