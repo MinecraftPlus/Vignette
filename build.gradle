@@ -8,7 +8,7 @@ plugins {
 sourceCompatibility = javaVersion
 targetCompatibility = javaVersion
 
-group = 'net.minecraftforge.lex' // Repackaged from 'org.cadixdev' to publish on Forge's Maven with out transformers
+group = 'org.minecraftplus' // Repackaged from 'org.cadixdev' to publish on Maven with out transformers
 archivesBaseName = project.name.toLowerCase()
 version = gradleutils.getTagOffsetVersion()
 
@@ -83,9 +83,9 @@ uploadArchives {
                 }
             }
             
-            // Forge's maven
+            // MinecraftPlus's maven
             if (System.env.MAVEN_USER) {
-                repository(url: 'https://maven.minecraftforge.net/') {
+                repository(url: 'https://maven.minecraftplus.org/') {
                     authentication(
                         userName: System.env.MAVEN_USER ?: 'not',
                         password: System.env.MAVEN_PASSWORD ?: 'set'
@@ -106,14 +106,14 @@ uploadArchives {
                     inceptionYear = project.inceptionYear
 
                     scm {
-                        url = 'https://github.com/CadixDev/Vignette'
-                        connection = 'scm:git:https://github.com/CadixDev/Vignette.git'
-                        developerConnection = 'scm:git:git@github.com:CadixDev/Vignette.git'
+                        url = 'https://github.com/MinecraftPlus/Vignette'
+                        connection = 'scm:git:https://github.com/MinecraftPlus/Vignette.git'
+                        developerConnection = 'scm:git:git@github.com:MinecraftPlus/Vignette.git'
                     }
 
                     issueManagement {
                         system = 'GitHub'
-                        url = 'https://github.com/CadixDev/Vignette/issues'
+                        url = 'https://github.com/MinecraftPlus/Vignette/issues'
                     }
 
                     licenses {
@@ -131,6 +131,11 @@ uploadArchives {
                             email = 'jmansfield@cadixdev.org'
                             url = 'https://www.jamiemansfield.me/'
                             timezone = 'Europe/London'
+                        }
+                        developer {
+                            id = 'thewituch'
+                            email = 'thewituch@gmail.com'
+                            timezone = 'Europe/Warsaw'
                         }
                     }
                 }
