@@ -153,7 +153,22 @@ public final class VignetteMain {
                     }
                 }
 
-                atlas.install(ctx -> new EnhancedRemappingTransformer(mappings, ctx, options.has(ffmetaSpec)));
+                if (options.has(parDeduceSpec)) {
+                    Set<Dictionary> dictionaries = new HashSet<>();
+                    for (Path dict : options.valuesOf(dictionarySpec)) {
+                        try {
+                            System.out.println("Dictionary: " + dict);
+                            dictionaries.add(new Dictionary().load(new FileInputStream(dict.toFile())));
+                        } catch (IOException ex) {
+                            throw new RuntimeException("Failed to read dictionary!", ex);
+                        }
+                    }
+                    atlas.install(ctx -> new EnhancedRemappingTransformer(mappings, ctx, options.has(ffmetaSpec)));
+                    System.out.println("Deducing");
+                } else {
+                    atlas.install(ctx -> new EnhancedRemappingTransformer(mappings, ctx, options.has(ffmetaSpec)));
+                }
+
                 if (options.has(ctrSpec)) {
                     atlas.install(ctx -> new ConstructorInjector(ctx, mappings));
                     System.out.println("Constructors");
