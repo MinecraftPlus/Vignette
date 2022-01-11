@@ -63,14 +63,20 @@ class ExtendedDeducingClassRemapper extends ClassRemapper {
             @Override
             public void visitLocalVariable(final String pname, final String pdescriptor, final String psignature, final Label start, final Label end, final int index) {
                 String rename = mapParameterName(className, mname, mdescriptor, index, pname, pdescriptor, usedNames);
-                super.visitLocalVariable(checkSnowmen(rename), pdescriptor, psignature, start, end, index);
+                super.visitLocalVariable(checkName(rename), pdescriptor, psignature, start, end, index);
             }
 
-            // Snowmen, added in 1.8.2? Check them names that can exist in source
-            private String checkSnowmen(String name) {
-                if (0x2603 != name.charAt(0))
-                    return name;
-                throw new IllegalStateException("Cannot be Snowman here!");
+            private String checkName(String name) {
+                // Snowmen, added in 1.8.2? Check them names that can exist in source
+                if (0x2603 == name.charAt(0))
+                    throw new IllegalStateException("Cannot be Snowman here!");
+
+                // Protect against protected java keywords as parameter name
+                // Ignore 'this' as it can be 0 index parameter
+                if (!name.equals("this") && Utils.JAVA_KEYWORDS.contains(name))
+                    throw new IllegalStateException("Parameter name cannot be equal to java keywords: " + name);
+
+                return name;
             }
 
             @Override
